@@ -3,7 +3,7 @@ import {
   draggable,
   dropTargetForElements,
 } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FC } from "react";
 import "./App.css";
 
 // ---- Types ----
@@ -24,10 +24,10 @@ function moveItem(
   state: ColumnsState,
   args:
     | { id: string; from: string; to: string; beforeId?: string }
-    | { id: string; from: string; to: string; toEnd: true },
+    | { id: string; from: string; to: string; toEnd: true }
 ): ColumnsState {
   const next: ColumnsState = Object.fromEntries(
-    Object.entries(state).map(([k, v]) => [k, [...v]]),
+    Object.entries(state).map(([k, v]) => [k, [...v]])
   );
   const source = next[args.from];
   const to = next[args.to];
@@ -47,19 +47,15 @@ function moveItem(
 
 // ---- Item component ----
 
-function DraggableItem({
-  item,
-  containerId,
-  onMove,
-}: {
+const DraggableItem: FC<{
   item: Item;
   containerId: string;
   onMove: (
     args:
       | { id: string; from: string; to: string; beforeId?: string }
-      | { id: string; from: string; to: string; toEnd: true },
+      | { id: string; from: string; to: string; toEnd: true }
   ) => void;
-}) {
+}> = ({ item, containerId, onMove }) => {
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -94,7 +90,7 @@ function DraggableItem({
         if (source.data?.type !== "item") return;
         (self.element as HTMLElement).setAttribute(
           "data-drop-intent",
-          "before",
+          "before"
         );
       },
       onDragLeave: ({ self }) => {
@@ -121,25 +117,20 @@ function DraggableItem({
       {item.label}
     </div>
   );
-}
+};
 
 // ---- Column component ----
 
-function Column({
-  id,
-  title,
-  items,
-  onMove,
-}: {
+const Column: FC<{
   id: string;
   title: string;
   items: Item[];
   onMove: (
     args:
       | { id: string; from: string; to: string; beforeId?: string }
-      | { id: string; from: string; to: string; toEnd: true },
+      | { id: string; from: string; to: string; toEnd: true }
   ) => void;
-}) {
+}> = ({ id, title, items, onMove }) => {
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -188,11 +179,11 @@ function Column({
       </div>
     </section>
   );
-}
+};
 
 // ---- Main Demo ----
 
-export default function App() {
+export const App: FC = () => {
   const [columns, setColumns] = useState<ColumnsState>(() => ({
     a1: [
       { id: "t1", label: "Write README" },
@@ -213,11 +204,11 @@ export default function App() {
       (
         args:
           | { id: string; from: string; to: string; beforeId?: string }
-          | { id: string; from: string; to: string; toEnd: true },
+          | { id: string; from: string; to: string; toEnd: true }
       ) => {
         setColumns((prev) => moveItem(prev, args));
       },
-    [],
+    []
   );
 
   const titles: Record<string, string> = {
@@ -247,4 +238,4 @@ export default function App() {
       </div>
     </div>
   );
-}
+};
