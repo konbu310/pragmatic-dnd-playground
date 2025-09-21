@@ -3,13 +3,8 @@ import {
   draggable,
   dropTargetForElements,
 } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
-import {
-  useCallback,
-  useMemo,
-  useState,
-  type FC,
-  type RefCallback,
-} from "react";
+import { useCallback, useState, type FC, type RefCallback } from "react";
+import invariant from "tiny-invariant";
 import "./App.css";
 
 // ---- Types ----
@@ -24,30 +19,34 @@ type DragData = {
   fromContainerId: string;
 };
 
+type DropInfo = {
+  id: string;
+  from: string;
+  to: string;
+  beforeId: string | "last";
+};
+
 // ---- Utilities ----
 
-function moveItem(
-  state: ColumnsState,
-  args:
-    | { id: string; from: string; to: string; beforeId?: string }
-    | { id: string; from: string; to: string; toEnd: true }
-): ColumnsState {
+function moveItem(state: ColumnsState, args: DropInfo): ColumnsState {
   const next: ColumnsState = Object.fromEntries(
     Object.entries(state).map(([k, v]) => [k, [...v]])
   );
   const source = next[args.from];
   const to = next[args.to];
   const idx = source.findIndex((i) => i.id === args.id);
-  if (idx === -1) return state; // nothing to do
+  invariant(idx !== -1, "Item to move must exist in the source container");
   const [item] = source.splice(idx, 1);
-
-  console.log(args);
-
-  if ("toEnd" in args && args.toEnd) {
+  if (args.beforeId === "last") {
     to.push(item);
-  } else if ("beforeId" in args && args.beforeId) {
-    const beforeIndex = to.findIndex((i) => i.id === args.beforeId);
-    const insertIndex = beforeIndex === -1 ? to.length : beforeIndex;
+  } else {
+    let beforeIndex = to.findIndex((i) => i.id === args.beforeId);
+    const insertIndex =
+      beforeIndex === -1
+        ? to.length
+        : args.from === args.to && idx <= beforeIndex
+          ? beforeIndex + 1
+          : beforeIndex;
     to.splice(insertIndex, 0, item);
   }
   return next;
@@ -67,16 +66,11 @@ function hasDropIntent(children: HTMLCollection): boolean {
 const DraggableItem: FC<{
   item: Item;
   containerId: string;
-  onMove: (
-    args:
-      | { id: string; from: string; to: string; beforeId?: string }
-      | { id: string; from: string; to: string; toEnd: true }
-  ) => void;
+  onMove: (args: DropInfo) => void;
 }> = ({ item, containerId, onMove }) => {
   const setDndAttributes = useCallback<RefCallback<HTMLDivElement>>(
     (el) => {
-      if (!el) return;
-
+      invariant(el);
       const cleanupDraggable = draggable({
         element: el,
         getInitialData: (): DragData => ({
@@ -115,7 +109,6 @@ const DraggableItem: FC<{
           (self.element as HTMLElement).removeAttribute("data-drop-intent");
           const data = source.data as DragData | undefined;
           if (!data || data.type !== "item") return;
-          console.log("DROP on ITEM");
           onMove({
             id: data.itemId,
             from: data.fromContainerId,
@@ -132,7 +125,7 @@ const DraggableItem: FC<{
 
   return (
     <div ref={setDndAttributes} role="listitem" className="item">
-      {item.label}
+      {item.id}. {item.label}
     </div>
   );
 };
@@ -143,16 +136,11 @@ const Column: FC<{
   id: string;
   title: string;
   items: Item[];
-  onMove: (
-    args:
-      | { id: string; from: string; to: string; beforeId?: string }
-      | { id: string; from: string; to: string; toEnd: true }
-  ) => void;
+  onMove: (args: DropInfo) => void;
 }> = ({ id, title, items, onMove }) => {
   const setDndAttributes = useCallback<RefCallback<HTMLElement>>(
     (el) => {
-      if (!el) return;
-
+      invariant(el);
       return dropTargetForElements({
         element: el,
         getData: () => ({ type: "column", containerId: id }),
@@ -175,7 +163,7 @@ const Column: FC<{
             id: data.itemId,
             from: data.fromContainerId,
             to: id,
-            toEnd: true,
+            beforeId: "last",
           });
         },
       });
@@ -218,17 +206,9 @@ export const App: FC = () => {
     c3: [],
   }));
 
-  const onMove = useMemo(
-    () =>
-      (
-        args:
-          | { id: string; from: string; to: string; beforeId?: string }
-          | { id: string; from: string; to: string; toEnd: true }
-      ) => {
-        setColumns((prev) => moveItem(prev, args));
-      },
-    []
-  );
+  const onMove = useCallback((args: DropInfo) => {
+    setColumns((prev) => moveItem(prev, args));
+  }, []);
 
   const titles: Record<string, string> = {
     a1: "A1",
