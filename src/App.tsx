@@ -3,7 +3,13 @@ import {
   draggable,
   dropTargetForElements,
 } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
-import { useEffect, useMemo, useRef, useState, type FC } from "react";
+import {
+  useCallback,
+  useMemo,
+  useState,
+  type FC,
+  type RefCallback,
+} from "react";
 import "./App.css";
 
 // ---- Types ----
@@ -35,6 +41,8 @@ function moveItem(
   if (idx === -1) return state; // nothing to do
   const [item] = source.splice(idx, 1);
 
+  console.log(args);
+
   if ("toEnd" in args && args.toEnd) {
     to.push(item);
   } else if ("beforeId" in args && args.beforeId) {
@@ -43,6 +51,15 @@ function moveItem(
     to.splice(insertIndex, 0, item);
   }
   return next;
+}
+
+function hasDropIntent(children: HTMLCollection): boolean {
+  for (const c of children) {
+    if (c instanceof HTMLElement && c.hasAttribute("data-drop-intent")) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // ---- Item component ----
@@ -56,64 +73,65 @@ const DraggableItem: FC<{
       | { id: string; from: string; to: string; toEnd: true }
   ) => void;
 }> = ({ item, containerId, onMove }) => {
-  const ref = useRef<HTMLDivElement | null>(null);
+  const setDndAttributes = useCallback<RefCallback<HTMLDivElement>>(
+    (el) => {
+      if (!el) return;
 
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
+      const cleanupDraggable = draggable({
+        element: el,
+        getInitialData: (): DragData => ({
+          type: "item",
+          itemId: item.id,
+          fromContainerId: containerId,
+        }),
+        onDragStart: () => {
+          el.setAttribute("data-dragging", "true");
+        },
+        onDrop: () => {
+          el.removeAttribute("data-dragging");
+        },
+      });
 
-    const cleanupDraggable = draggable({
-      element: el,
-      getInitialData: (): DragData => ({
-        type: "item",
-        itemId: item.id,
-        fromContainerId: containerId,
-      }),
-      onDragStart: () => {
-        el.setAttribute("data-dragging", "true");
-      },
-      onDrop: () => {
-        el.removeAttribute("data-dragging");
-      },
-    });
+      // Act as a drop target to insert BEFORE this item
+      const cleanupDropTarget = dropTargetForElements({
+        element: el,
+        getData: () => ({
+          type: "item",
+          itemId: item.id,
+          containerId,
+        }),
+        canDrop: ({ source }) => source.data?.type === "item",
+        onDragEnter: ({ self, source }) => {
+          if (source.data?.type !== "item") return;
+          (self.element as HTMLElement).setAttribute(
+            "data-drop-intent",
+            "before"
+          );
+        },
+        onDragLeave: ({ self }) => {
+          (self.element as HTMLElement).removeAttribute("data-drop-intent");
+        },
+        onDrop: ({ self, source }) => {
+          (self.element as HTMLElement).removeAttribute("data-drop-intent");
+          const data = source.data as DragData | undefined;
+          if (!data || data.type !== "item") return;
+          console.log("DROP on ITEM");
+          onMove({
+            id: data.itemId,
+            from: data.fromContainerId,
+            to: containerId,
+            beforeId: item.id,
+          });
+        },
+      });
 
-    // Act as a drop target to insert BEFORE this item
-    const cleanupDropTarget = dropTargetForElements({
-      element: el,
-      getData: () => ({
-        type: "item",
-        itemId: item.id,
-        containerId,
-      }),
-      canDrop: ({ source }) => source.data?.type === "item",
-      onDragEnter: ({ self, source }) => {
-        if (source.data?.type !== "item") return;
-        (self.element as HTMLElement).setAttribute(
-          "data-drop-intent",
-          "before"
-        );
-      },
-      onDragLeave: ({ self }) => {
-        (self.element as HTMLElement).removeAttribute("data-drop-intent");
-      },
-      onDrop: ({ self, source }) => {
-        (self.element as HTMLElement).removeAttribute("data-drop-intent");
-        const data = source.data as DragData | undefined;
-        if (!data || data.type !== "item") return;
-        onMove({
-          id: data.itemId,
-          from: data.fromContainerId,
-          to: containerId,
-          beforeId: item.id,
-        });
-      },
-    });
-
-    return () => combine(cleanupDraggable, cleanupDropTarget)();
-  }, [item.id, containerId, onMove]);
+      return () => combine(cleanupDraggable, cleanupDropTarget)();
+    },
+    [item.id, containerId, onMove]
+  );
 
   return (
-    <div ref={ref} role="listitem" className="item">
+    <div ref={setDndAttributes} role="listitem" className="item">
       {item.label}
     </div>
   );
@@ -131,43 +149,44 @@ const Column: FC<{
       | { id: string; from: string; to: string; toEnd: true }
   ) => void;
 }> = ({ id, title, items, onMove }) => {
-  const ref = useRef<HTMLDivElement | null>(null);
+  const setDndAttributes = useCallback<RefCallback<HTMLElement>>(
+    (el) => {
+      if (!el) return;
 
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-
-    // Column surface accepts drops to append to END
-    const cleanup = dropTargetForElements({
-      element: el,
-      getData: () => ({ type: "column", containerId: id }),
-      canDrop: ({ source }) => source.data?.type === "item",
-      onDragEnter: ({ self }) => {
-        self.element.setAttribute("data-column-hover", "true");
-      },
-      onDragLeave: ({ self }) => {
-        self.element.removeAttribute("data-column-hover");
-      },
-      onDrop: ({ self, source }) => {
-        self.element.removeAttribute("data-column-hover");
-        const data = source.data as DragData | undefined;
-        if (!data || data.type !== "item") return;
-        onMove({
-          id: data.itemId,
-          from: data.fromContainerId,
-          to: id,
-          toEnd: true,
-        });
-      },
-    });
-
-    return () => cleanup();
-  }, [id, onMove]);
+      return dropTargetForElements({
+        element: el,
+        getData: () => ({ type: "column", containerId: id }),
+        canDrop: ({ source, element }) => {
+          return (
+            source.data?.type === "item" && !hasDropIntent(element.children)
+          );
+        },
+        onDragEnter: ({ self }) => {
+          self.element.setAttribute("data-column-hover", "true");
+        },
+        onDragLeave: ({ self }) => {
+          self.element.removeAttribute("data-column-hover");
+        },
+        onDrop: ({ self, source }) => {
+          self.element.removeAttribute("data-column-hover");
+          const data = source.data as DragData | undefined;
+          if (!data || data.type !== "item") return;
+          onMove({
+            id: data.itemId,
+            from: data.fromContainerId,
+            to: id,
+            toEnd: true,
+          });
+        },
+      });
+    },
+    [id, onMove]
+  );
 
   return (
     <section className="column">
       <header>{title}</header>
-      <div ref={ref} role="list" className="item-list">
+      <div ref={setDndAttributes} role="list" className="item-list">
         {items.map((it) => (
           <DraggableItem
             key={it.id}
